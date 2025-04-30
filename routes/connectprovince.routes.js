@@ -13,13 +13,13 @@ router.get('/', (req, res) => {
 });
 
 // Public routes for retrieving data
-router.get('/provinces', connectProvinceController.getAllProvinces);
-router.get('/province/:id', connectProvinceController.getProvinceById);
-router.get('/province/:id/connections', connectProvinceController.getProvinceConnections);
-router.get('/province/:id/geojson', connectProvinceController.getProvinceGeoJSON);
-router.get('/province/:id/polygon', connectProvinceController.getProvincePolygon);
-router.get('/matrix/:year', connectProvinceController.getTradeMatrix);
-router.get('/statistics', connectProvinceController.getConnectionStatistics);
+// router.get('/provinces', connectProvinceController.getAllProvinces);
+// router.get('/province/:id', connectProvinceController.getProvinceById);
+// router.get('/province/:id/connections', connectProvinceController.getProvinceConnections);
+// router.get('/province/:id/geojson', connectProvinceController.getProvinceGeoJSON);
+// router.get('/province/:id/polygon', connectProvinceController.getProvincePolygon);
+// router.get('/matrix/:year', connectProvinceController.getTradeMatrix);
+// router.get('/statistics', connectProvinceController.getConnectionStatistics);
 
 // Protected routes for CRUD operations
 router.post('/initialize', 

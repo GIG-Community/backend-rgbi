@@ -240,30 +240,42 @@ export const updateConnection = async (req, res) => {
 // Get connections for a specific province
 export const getProvinceConnections = async (req, res) => {
   try {
-    const provinceId = req.params.id;
+    const { id } = req.params;
     
-    const province = await Province.findById(provinceId);
-    if (!province) {
-      return res.status(404).json({
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
         success: false,
-        message: 'Province not found'
+        message: 'Invalid province ID format'
       });
     }
 
-    // Return just the province information without connection data
+    // Find all connections where this province is either source or target
+    const connections = await ProvinceConnection.find({
+      $or: [
+        { sourceProvinceId: id },
+        { targetProvinceId: id }
+      ]
+    }).populate('sourceProvinceId targetProvinceId', 'name code');
+
+    if (!connections || connections.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+        message: 'No connections found for this province'
+      });
+    }
+
     return res.status(200).json({
       success: true,
-      province: {
-        id: province._id,
-        name: province.name,
-        code: province.code
-      }
+      count: connections.length,
+      data: connections
     });
   } catch (error) {
-    console.error('Error fetching province connections:', error);
+    console.error('Error getting province connections:', error);
     return res.status(500).json({
       success: false,
-      message: 'Error fetching province connections',
+      message: 'Server error',
       error: error.message
     });
   }
@@ -309,27 +321,42 @@ export const deleteConnection = async (req, res) => {
 // Get province GeoJSON data
 export const getProvinceGeoJSON = async (req, res) => {
   try {
-    const provinceId = req.params.id;
+    const { id } = req.params;
     
-    const province = await Province.findById(provinceId);
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid province ID format'
+      });
+    }
+
+    const province = await Province.findById(id);
+    
     if (!province) {
       return res.status(404).json({
         success: false,
         message: 'Province not found'
       });
     }
-    
-    const geoJSON = province.getGeojson();
-    
+
+    // Check if province has geojson data
+    if (!province.geojson) {
+      return res.status(404).json({
+        success: false,
+        message: 'No GeoJSON data found for this province'
+      });
+    }
+
     return res.status(200).json({
       success: true,
-      data: geoJSON
+      data: province.geojson
     });
   } catch (error) {
-    console.error('Error fetching province GeoJSON:', error);
+    console.error('Error getting province GeoJSON:', error);
     return res.status(500).json({
       success: false,
-      message: 'Error fetching province GeoJSON',
+      message: 'Server error',
       error: error.message
     });
   }
@@ -338,27 +365,42 @@ export const getProvinceGeoJSON = async (req, res) => {
 // Get province polygon data 
 export const getProvincePolygon = async (req, res) => {
   try {
-    const provinceId = req.params.id;
+    const { id } = req.params;
     
-    const province = await Province.findById(provinceId);
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid province ID format'
+      });
+    }
+
+    const province = await Province.findById(id);
+    
     if (!province) {
       return res.status(404).json({
         success: false,
         message: 'Province not found'
       });
     }
-    
-    const polygon = province.getPolygon();
-    
+
+    // Check if province has polygon data
+    if (!province.polygon) {
+      return res.status(404).json({
+        success: false,
+        message: 'No polygon data found for this province'
+      });
+    }
+
     return res.status(200).json({
       success: true,
-      data: polygon
+      data: province.polygon
     });
   } catch (error) {
-    console.error('Error fetching province polygon:', error);
+    console.error('Error getting province polygon:', error);
     return res.status(500).json({
       success: false,
-      message: 'Error fetching province polygon',
+      message: 'Server error',
       error: error.message
     });
   }
@@ -367,58 +409,47 @@ export const getProvincePolygon = async (req, res) => {
 // Get trade matrix for a specific year
 export const getTradeMatrix = async (req, res) => {
   try {
-    const year = parseInt(req.params.year);
+    const { year } = req.params;
     
-    if (!year || isNaN(year)) {
+    // Validate year
+    const yearNum = parseInt(year, 10);
+    if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
       return res.status(400).json({
         success: false,
-        message: 'Valid year parameter is required'
+        message: 'Invalid year format or range'
       });
     }
 
-    // Get all provinces for the matrix headers
+    // Get all provinces for the matrix
     const provinces = await Province.find({}, 'name code');
     
-    // Get all connections for the specified year
-    const connections = await ProvinceConnection.find({ year });
-    
-    // Build the matrix
-    const matrix = {};
-    
-    // Initialize matrix with empty connections
-    provinces.forEach(source => {
-      matrix[source._id] = {};
-      provinces.forEach(target => {
-        if (source._id.toString() !== target._id.toString()) {
-          matrix[source._id][target._id] = { connected: false };
-        }
+    if (!provinces || provinces.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No provinces found'
       });
-    });
-    
-    // Fill in the matrix with actual connections
-    connections.forEach(conn => {
-      const sourceId = conn.sourceProvinceId.toString();
-      const targetId = conn.targetProvinceId.toString();
-      
-      if (matrix[sourceId] && matrix[sourceId][targetId]) {
-        matrix[sourceId][targetId] = {
-          connected: true
-        };
-      }
-    });
-    
+    }
+
+    // Get all connections for the specified year
+    const connections = await ProvinceConnection.find({ year: yearNum })
+      .populate('sourceProvinceId targetProvinceId', 'name code');
+
+    // Create the trade matrix
+    const matrix = {
+      provinces: provinces,
+      connections: connections,
+      year: yearNum
+    };
+
     return res.status(200).json({
       success: true,
-      data: {
-        provinces: provinces.map(p => ({ id: p._id, name: p.name, code: p.code })),
-        matrix
-      }
+      data: matrix
     });
   } catch (error) {
-    console.error('Error generating trade matrix:', error);
+    console.error('Error getting trade matrix:', error);
     return res.status(500).json({
       success: false,
-      message: 'Error generating trade matrix',
+      message: 'Server error',
       error: error.message
     });
   }
@@ -427,35 +458,58 @@ export const getTradeMatrix = async (req, res) => {
 // Get aggregate statistics
 export const getConnectionStatistics = async (req, res) => {
   try {
-    // Get statistics using aggregation pipeline
-    const statsArray = await ProvinceConnection.aggregate([
-      {
-        $group: {
-          _id: "$year",
-          connectionCount: { $count: {} }
-        }
-      },
-      {
-        $project: {
-          _id: 0,
-          year: "$_id",
-          connectionCount: 1
-        }
-      },
-      {
-        $sort: { year: -1 } // Sort by year descending
-      }
-    ]);
+    // Get total connections count
+    const totalConnections = await ProvinceConnection.countDocuments();
     
+    // Get unique years
+    const years = await ProvinceConnection.distinct('year');
+    
+    // Get connections by year count
+    const connectionsByYear = [];
+    for (const year of years) {
+      const count = await ProvinceConnection.countDocuments({ year });
+      connectionsByYear.push({ year, count });
+    }
+    
+    // Get top connected provinces (provinces with most connections)
+    const provinces = await Province.find({}, 'name code');
+    const provinceStats = [];
+    
+    for (const province of provinces) {
+      const sourceCount = await ProvinceConnection.countDocuments({ sourceProvinceId: province._id });
+      const targetCount = await ProvinceConnection.countDocuments({ targetProvinceId: province._id });
+      
+      provinceStats.push({
+        province: {
+          _id: province._id,
+          name: province.name,
+          code: province.code
+        },
+        connectionsAsSource: sourceCount,
+        connectionsAsTarget: targetCount,
+        totalConnections: sourceCount + targetCount
+      });
+    }
+    
+    // Sort provinces by total connections
+    provinceStats.sort((a, b) => b.totalConnections - a.totalConnections);
+    
+    const statistics = {
+      totalConnections,
+      years,
+      connectionsByYear,
+      provinceStats: provinceStats.slice(0, 10) // Just get top 10
+    };
+
     return res.status(200).json({
       success: true,
-      data: statsArray
+      data: statistics
     });
   } catch (error) {
-    console.error('Error generating statistics:', error);
+    console.error('Error getting connection statistics:', error);
     return res.status(500).json({
       success: false,
-      message: 'Error generating statistics',
+      message: 'Server error',
       error: error.message
     });
   }

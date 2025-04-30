@@ -5,6 +5,7 @@ import authRoutes from "./routes/auth.routes.js";
 import foodSecurityRoutes from "./routes/foodsecurity.routes.js";
 import supplyChainRoutes from "./routes/supplychain.routes.js"; 
 import connectProvinceRoutes from "./routes/connectprovince.routes.js";
+import provinceRoutes from "./routes/province.routes.js"; // Changed from importing the model to the router
 import connectToDatabase from "./database/mongodb.js";
 import errorMiddleware from "./middlewares/error.middleware.js";
 import cookieParser from "cookie-parser";
@@ -26,7 +27,7 @@ app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/food-securities', foodSecurityRoutes);
 app.use('/api/v1/supply-chain', supplyChainRoutes); // Add supply chain routes
 app.use('/api/v1/connect-province', connectProvinceRoutes);
-// app.use('/api/food-security', foodSecurityRoutes);
+app.use('/api/v1/provinces', provinceRoutes); // Fixed to use the router instead of the model
 
 // Make sure to use the error middleware
 app.use(errorMiddleware);

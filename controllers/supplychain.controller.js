@@ -1,4 +1,5 @@
 import SupplyChain from '../models/supplychain.model.js';
+import Province from '../models/province.model.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import mongoose from 'mongoose';
 
@@ -19,7 +20,7 @@ export const create = asyncHandler(async (req, res) => {
     req.body.createdBy = req.user.name;
     req.body.userRole = req.user.role;
 
-    const { provinsi, tahun } = req.body;
+    const { provinceId, tahun } = req.body;
     
     // Validate year is an integer
     if (!Number.isInteger(tahun)) {
@@ -28,14 +29,27 @@ export const create = asyncHandler(async (req, res) => {
       throw error;
     }
     
+    // Verify province exists and get its name
+    const province = await Province.findById(provinceId);
+    if (!province) {
+      const error = new Error('Province not found');
+      error.statusCode = 404;
+      throw error;
+    }
+    
     // Check if data already exists for this province and year
-    const existingData = await SupplyChain.findOne({ provinsi, tahun });
+    const existingData = await SupplyChain.findOne({ provinsi: province.name, tahun });
     
     if (existingData) {
       const error = new Error('Supply chain data already exists for this province and year');
       error.statusCode = 409;
       throw error;
     }
+
+    // Set the province name from the found province object
+    req.body.provinsi = province.name;
+    // Store province ID as a reference
+    req.body.provinceReference = provinceId;
 
     const supplyChain = await SupplyChain.create([req.body], { session });
     
@@ -44,7 +58,14 @@ export const create = asyncHandler(async (req, res) => {
 
     res.status(201).json({
       success: true,
-      data: supplyChain[0]
+      data: {
+        ...supplyChain[0]._doc,
+        province: {
+          id: province._id,
+          name: province.name,
+          code: province.code
+        }
+      }
     });
   } catch (error) {
     await session.abortTransaction();
@@ -115,12 +136,29 @@ export const findByYear = asyncHandler(async (req, res) => {
   });
 });
 
-// Get supply chain records by province
+// Get supply chain records by province ID
 export const findByProvince = asyncHandler(async (req, res) => {
-  const supplyChains = await SupplyChain.find({ provinsi: req.params.provinsi });
+  const provinceId = req.params.id;
+  
+  // Verify province exists
+  const province = await Province.findById(provinceId);
+  if (!province) {
+    return res.status(404).json({
+      success: false,
+      message: 'Province not found'
+    });
+  }
+  
+  // Find supply chain data using province name from the found province
+  const supplyChains = await SupplyChain.find({ provinsi: province.name });
   
   res.status(200).json({
     success: true,
+    province: {
+      id: province._id,
+      name: province.name,
+      code: province.code
+    },
     count: supplyChains.length,
     data: supplyChains
   });
@@ -203,6 +241,26 @@ export const update = asyncHandler(async (req, res) => {
       const error = new Error('Supply chain record not found');
       error.statusCode = 404;
       throw error;
+    }
+    
+    // Handle province ID if provided
+    if (req.body.provinceId) {
+      const province = await Province.findById(req.body.provinceId);
+      if (!province) {
+        const error = new Error('Province not found');
+        error.statusCode = 404;
+        throw error;
+      }
+      
+      // Prevent changing province
+      if (province.name !== existingData.provinsi) {
+        const error = new Error('Province cannot be modified');
+        error.statusCode = 400;
+        throw error;
+      }
+      
+      // Remove provinceId from request body as we use provinsi internally
+      delete req.body.provinceId;
     }
     
     // Prevent changing province and year which are unique identifiers

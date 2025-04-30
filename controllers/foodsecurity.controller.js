@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import FoodSecurity from '../models/foodsecurity.model.js';
+import Province from '../models/province.model.js';
 
 /**
  * Get all food security data with pagination
@@ -71,10 +72,21 @@ export const getFoodSecurityById = async (req, res, next) => {
  */
 export const getFoodSecurityByProvince = async (req, res, next) => {
   try {
-    const { province } = req.params;
+    const { id: provinceId } = req.params;
     const { year } = req.query;
     
-    let query = { provinsi: province };
+    // Verify province exists
+    const province = await Province.findById(provinceId);
+    if (!province) {
+      return res.status(404).json({
+        success: false,
+        message: 'Province not found'
+      });
+    }
+    
+    // Build query using provinsi field (which stores province name in the existing model)
+    // We need to find food security data that matches this province's name
+    let query = { provinsi: province.name };
     
     if (year) {
       query.tahun = parseInt(year, 10);
@@ -82,17 +94,13 @@ export const getFoodSecurityByProvince = async (req, res, next) => {
     
     const foodSecurityData = await FoodSecurity.find(query).sort({ tahun: -1 });
     
-    if (foodSecurityData.length === 0) {
-      return res.status(200).json({
-        success: true,
-        message: `No food security data found for province: ${province}`,
-        count: 0,
-        data: []
-      });
-    }
-    
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
+      province: {
+        id: province._id,
+        name: province.name,
+        code: province.code
+      },
       count: foodSecurityData.length,
       data: foodSecurityData
     });
@@ -143,7 +151,16 @@ export const createFoodSecurityData = async (req, res, next) => {
       throw error;
     }
 
-    const { provinsi, tahun } = req.body;
+    const { provinceId, tahun } = req.body;
+    
+    // Verify province exists and get its name
+    const province = await Province.findById(provinceId);
+    if (!province) {
+      return res.status(404).json({
+        success: false,
+        message: 'Province not found'
+      });
+    }
     
     // Validate year is an integer
     if (!Number.isInteger(tahun)) {
@@ -153,7 +170,7 @@ export const createFoodSecurityData = async (req, res, next) => {
     }
     
     // Check if data already exists for this province and year
-    const existingData = await FoodSecurity.findOne({ provinsi, tahun });
+    const existingData = await FoodSecurity.findOne({ provinsi: province.name, tahun });
     
     if (existingData) {
       const error = new Error('Food security data already exists for this province and year');
@@ -192,6 +209,10 @@ export const createFoodSecurityData = async (req, res, next) => {
     let newData = {
       ...defaultData,
       ...req.body,
+      // Use province name from the found province object
+      provinsi: province.name,
+      // Store province ID as a reference (can be used for future lookups)
+      provinceReference: provinceId,
       independent_variables: {
         ...defaultData.independent_variables,
         ...(req.body.independent_variables || {}),
@@ -224,7 +245,14 @@ export const createFoodSecurityData = async (req, res, next) => {
     res.status(201).json({
       success: true,
       message: 'Food security data created successfully',
-      data: newFoodSecurityData[0]
+      data: {
+        ...newFoodSecurityData[0]._doc,
+        province: {
+          id: province._id,
+          name: province.name,
+          code: province.code
+        }
+      }
     });
   } catch (error) {
     await session.abortTransaction();
@@ -408,18 +436,31 @@ export const getAverageFoodSecurityByYear = async (req, res, next) => {
  */
 export const getFoodSecurityTrend = async (req, res, next) => {
   try {
-    const { province } = req.params;
+    const { id: provinceId } = req.params;
+    
+    // Verify province exists
+    const province = await Province.findById(provinceId);
+    if (!province) {
+      return res.status(404).json({
+        success: false,
+        message: 'Province not found'
+      });
+    }
     
     const trend = await FoodSecurity.find(
-      { provinsi: province },
+      { provinsi: province.name },
       'tahun dependent_variable.indeks_ketahanan_pangan'
     ).sort({ tahun: 1 });
     
     if (trend.length === 0) {
       return res.status(200).json({
         success: true,
-        message: `No historical data found for province: ${province}`,
-        province,
+        message: `No historical data found for province: ${province.name}`,
+        province: {
+          id: province._id,
+          name: province.name,
+          code: province.code
+        },
         data: []
       });
     }
@@ -437,7 +478,11 @@ export const getFoodSecurityTrend = async (req, res, next) => {
     
     res.status(200).json({
       success: true,
-      province,
+      province: {
+        id: province._id,
+        name: province.name,
+        code: province.code
+      },
       data: formattedTrend
     });
   } catch (error) {

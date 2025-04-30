@@ -241,7 +241,6 @@ export const updateConnection = async (req, res) => {
 export const getProvinceConnections = async (req, res) => {
   try {
     const provinceId = req.params.id;
-    const year = req.query.year ? parseInt(req.query.year) : null;
     
     const province = await Province.findById(provinceId);
     if (!province) {
@@ -251,53 +250,13 @@ export const getProvinceConnections = async (req, res) => {
       });
     }
 
-    // Find outgoing connections (this province to others)
-    let outgoingQuery = { sourceProvinceId: provinceId };
-    if (year) outgoingQuery.year = year;
-    
-    const outgoingConnections = await ProvinceConnection.find(outgoingQuery)
-      .populate('targetProvinceId', 'name code');
-    
-    // Find incoming connections (others to this province)
-    let incomingQuery = { targetProvinceId: provinceId };
-    if (year) incomingQuery.year = year;
-    
-    const incomingConnections = await ProvinceConnection.find(incomingQuery)
-      .populate('sourceProvinceId', 'name code');
-
-    // Format the connections for response
-    const formattedOutgoing = outgoingConnections.map(conn => ({
-      id: conn._id,
-      year: conn.year,
-      targetProvince: {
-        id: conn.targetProvinceId._id,
-        name: conn.targetProvinceId.name,
-        code: conn.targetProvinceId.code
-      },
-      direction: 'outgoing'
-    }));
-
-    const formattedIncoming = incomingConnections.map(conn => ({
-      id: conn._id,
-      year: conn.year, 
-      sourceProvince: {
-        id: conn.sourceProvinceId._id,
-        name: conn.sourceProvinceId.name,
-        code: conn.sourceProvinceId.code
-      },
-      direction: 'incoming'
-    }));
-    
+    // Return just the province information without connection data
     return res.status(200).json({
       success: true,
       province: {
         id: province._id,
         name: province.name,
         code: province.code
-      },
-      connections: {
-        outgoing: formattedOutgoing,
-        incoming: formattedIncoming
       }
     });
   } catch (error) {

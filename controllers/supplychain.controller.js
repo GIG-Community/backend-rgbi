@@ -136,9 +136,10 @@ export const findByCondition = asyncHandler(async (req, res) => {
     query = { $expr: { $gt: ["$produksiBeras", "$konsumsiBeras"] } };
   } else if (condition === 'deficit') {
     query = { $expr: { $lt: ["$produksiBeras", "$konsumsiBeras"] } };
-  } else if (condition === 'balanced') {
-    query = { $expr: { $eq: ["$produksiBeras", "$konsumsiBeras"] } };
   }
+//   } else if (condition === 'balanced') {
+//     query = { $expr: { $eq: ["$produksiBeras", "$konsumsiBeras"] } };
+//   }
   
   const supplyChains = await SupplyChain.find(query);
   

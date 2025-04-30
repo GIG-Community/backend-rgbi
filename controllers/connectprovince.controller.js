@@ -1,0 +1,598 @@
+import Province from '../models/province.model.js';
+import ProvinceConnection from '../models/provinceConnection.model.js';
+import mongoose from 'mongoose';
+
+// Get all provinces
+export const getAllProvinces = async (req, res) => {
+  try {
+    const provinces = await Province.find({}, 'name code');
+    return res.status(200).json({
+      success: true,
+      data: provinces
+    });
+  } catch (error) {
+    console.error('Error fetching provinces:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching provinces',
+      error: error.message
+    });
+  }
+};
+
+// Initialize provinces from geojson data
+export const initializeProvinces = async (req, res) => {
+  try {
+    const provinces = await Province.initializeFromGeoJSON();
+    return res.status(200).json({
+      success: true,
+      message: 'Provinces initialized successfully',
+      count: provinces.length,
+      data: provinces.map(p => ({ id: p._id, name: p.name, code: p.code }))
+    });
+  } catch (error) {
+    console.error('Error initializing provinces:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error initializing provinces',
+      error: error.message
+    });
+  }
+};
+
+// Get province by ID
+export const getProvinceById = async (req, res) => {
+  try {
+    const province = await Province.findById(req.params.id);
+    if (!province) {
+      return res.status(404).json({
+        success: false,
+        message: 'Province not found'
+      });
+    }
+    return res.status(200).json({
+      success: true,
+      data: province
+    });
+  } catch (error) {
+    console.error('Error fetching province:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching province',
+      error: error.message
+    });
+  }
+};
+
+// Create a new connection between provinces
+export const createConnection = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  
+  try {
+    const { 
+      sourceProvinceId, 
+      targetProvinceId, 
+      year
+    } = req.body;
+
+    // Validate input
+    if (!sourceProvinceId || !targetProvinceId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Source and target province IDs are required'
+      });
+    }
+
+    if (!year) {
+      return res.status(400).json({
+        success: false,
+        message: 'Year is required'
+      });
+    }
+
+    // Check if source and target are the same
+    if (sourceProvinceId === targetProvinceId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Source and target provinces cannot be the same'
+      });
+    }
+
+    // Check if provinces exist
+    const sourceProvince = await Province.findById(sourceProvinceId);
+    const targetProvince = await Province.findById(targetProvinceId);
+
+    if (!sourceProvince || !targetProvince) {
+      return res.status(404).json({
+        success: false,
+        message: 'One or both provinces not found'
+      });
+    }
+
+    // Check if connection already exists
+    let connection = await ProvinceConnection.findOne({
+      sourceProvinceId,
+      targetProvinceId,
+      year
+    });
+
+    let isNew = false;
+
+    if (connection) {
+      await connection.save({ session });
+    } else {
+      // Create new connection
+      isNew = true;
+      connection = await ProvinceConnection.create([{
+        sourceProvinceId,
+        targetProvinceId,
+        year
+      }], { session });
+      connection = connection[0]; // Extract from array returned by create
+    }
+    
+    await session.commitTransaction();
+    session.endSession();
+    
+    return res.status(isNew ? 201 : 200).json({
+      success: true,
+      message: isNew ? 'Connection created successfully' : 'Connection updated successfully',
+      data: {
+        id: connection._id,
+        sourceProvince: {
+          id: sourceProvince._id,
+          name: sourceProvince.name
+        },
+        targetProvince: {
+          id: targetProvince._id,
+          name: targetProvince.name
+        },
+        year
+      }
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    
+    // Handle duplicate key error from MongoDB
+    if ((error.name === 'MongoError' || error.name === 'MongoServerError') && error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'A connection between these provinces for this year already exists'
+      });
+    }
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: Object.values(error.errors).map(err => err.message)
+      });
+    }
+    
+    console.error('Error creating/updating connection:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error creating/updating connection',
+      error: error.message
+    });
+  }
+};
+
+// Update an existing connection
+export const updateConnection = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  
+  try {
+    const { connectionId } = req.params;
+    
+    const connection = await ProvinceConnection.findById(connectionId);
+    
+    if (!connection) {
+      return res.status(404).json({
+        success: false,
+        message: 'Connection not found'
+      });
+    }
+    
+    // No fields to update since we removed volume and value
+    await connection.save({ session });
+    
+    // Get province details for response
+    const sourceProvince = await Province.findById(connection.sourceProvinceId);
+    const targetProvince = await Province.findById(connection.targetProvinceId);
+    
+    await session.commitTransaction();
+    session.endSession();
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Connection updated successfully',
+      data: {
+        id: connection._id,
+        sourceProvince: {
+          id: sourceProvince._id,
+          name: sourceProvince.name
+        },
+        targetProvince: {
+          id: targetProvince._id,
+          name: targetProvince.name
+        },
+        year: connection.year
+      }
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    
+    console.error('Error updating connection:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error updating connection',
+      error: error.message
+    });
+  }
+};
+
+// Get connections for a specific province
+export const getProvinceConnections = async (req, res) => {
+  try {
+    const provinceId = req.params.id;
+    const year = req.query.year ? parseInt(req.query.year) : null;
+    
+    const province = await Province.findById(provinceId);
+    if (!province) {
+      return res.status(404).json({
+        success: false,
+        message: 'Province not found'
+      });
+    }
+
+    // Find outgoing connections (this province to others)
+    let outgoingQuery = { sourceProvinceId: provinceId };
+    if (year) outgoingQuery.year = year;
+    
+    const outgoingConnections = await ProvinceConnection.find(outgoingQuery)
+      .populate('targetProvinceId', 'name code');
+    
+    // Find incoming connections (others to this province)
+    let incomingQuery = { targetProvinceId: provinceId };
+    if (year) incomingQuery.year = year;
+    
+    const incomingConnections = await ProvinceConnection.find(incomingQuery)
+      .populate('sourceProvinceId', 'name code');
+
+    // Format the connections for response
+    const formattedOutgoing = outgoingConnections.map(conn => ({
+      id: conn._id,
+      year: conn.year,
+      targetProvince: {
+        id: conn.targetProvinceId._id,
+        name: conn.targetProvinceId.name,
+        code: conn.targetProvinceId.code
+      },
+      direction: 'outgoing'
+    }));
+
+    const formattedIncoming = incomingConnections.map(conn => ({
+      id: conn._id,
+      year: conn.year, 
+      sourceProvince: {
+        id: conn.sourceProvinceId._id,
+        name: conn.sourceProvinceId.name,
+        code: conn.sourceProvinceId.code
+      },
+      direction: 'incoming'
+    }));
+    
+    return res.status(200).json({
+      success: true,
+      province: {
+        id: province._id,
+        name: province.name,
+        code: province.code
+      },
+      connections: {
+        outgoing: formattedOutgoing,
+        incoming: formattedIncoming
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching province connections:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching province connections',
+      error: error.message
+    });
+  }
+};
+
+// Delete a connection
+export const deleteConnection = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  
+  try {
+    const { connectionId } = req.params;
+    
+    const deletedConnection = await ProvinceConnection.findByIdAndDelete(connectionId).session(session);
+    
+    if (!deletedConnection) {
+      return res.status(404).json({
+        success: false,
+        message: 'Connection not found'
+      });
+    }
+    
+    await session.commitTransaction();
+    session.endSession();
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Connection deleted successfully'
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    
+    console.error('Error deleting connection:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error deleting connection',
+      error: error.message
+    });
+  }
+};
+
+// Get province GeoJSON data
+export const getProvinceGeoJSON = async (req, res) => {
+  try {
+    const provinceId = req.params.id;
+    
+    const province = await Province.findById(provinceId);
+    if (!province) {
+      return res.status(404).json({
+        success: false,
+        message: 'Province not found'
+      });
+    }
+    
+    const geoJSON = province.getGeojson();
+    
+    return res.status(200).json({
+      success: true,
+      data: geoJSON
+    });
+  } catch (error) {
+    console.error('Error fetching province GeoJSON:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching province GeoJSON',
+      error: error.message
+    });
+  }
+};
+
+// Get province polygon data 
+export const getProvincePolygon = async (req, res) => {
+  try {
+    const provinceId = req.params.id;
+    
+    const province = await Province.findById(provinceId);
+    if (!province) {
+      return res.status(404).json({
+        success: false,
+        message: 'Province not found'
+      });
+    }
+    
+    const polygon = province.getPolygon();
+    
+    return res.status(200).json({
+      success: true,
+      data: polygon
+    });
+  } catch (error) {
+    console.error('Error fetching province polygon:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching province polygon',
+      error: error.message
+    });
+  }
+};
+
+// Get trade matrix for a specific year
+export const getTradeMatrix = async (req, res) => {
+  try {
+    const year = parseInt(req.params.year);
+    
+    if (!year || isNaN(year)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid year parameter is required'
+      });
+    }
+
+    // Get all provinces for the matrix headers
+    const provinces = await Province.find({}, 'name code');
+    
+    // Get all connections for the specified year
+    const connections = await ProvinceConnection.find({ year });
+    
+    // Build the matrix
+    const matrix = {};
+    
+    // Initialize matrix with empty connections
+    provinces.forEach(source => {
+      matrix[source._id] = {};
+      provinces.forEach(target => {
+        if (source._id.toString() !== target._id.toString()) {
+          matrix[source._id][target._id] = { connected: false };
+        }
+      });
+    });
+    
+    // Fill in the matrix with actual connections
+    connections.forEach(conn => {
+      const sourceId = conn.sourceProvinceId.toString();
+      const targetId = conn.targetProvinceId.toString();
+      
+      if (matrix[sourceId] && matrix[sourceId][targetId]) {
+        matrix[sourceId][targetId] = {
+          connected: true
+        };
+      }
+    });
+    
+    return res.status(200).json({
+      success: true,
+      data: {
+        provinces: provinces.map(p => ({ id: p._id, name: p.name, code: p.code })),
+        matrix
+      }
+    });
+  } catch (error) {
+    console.error('Error generating trade matrix:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error generating trade matrix',
+      error: error.message
+    });
+  }
+};
+
+// Get aggregate statistics
+export const getConnectionStatistics = async (req, res) => {
+  try {
+    // Get statistics using aggregation pipeline
+    const statsArray = await ProvinceConnection.aggregate([
+      {
+        $group: {
+          _id: "$year",
+          connectionCount: { $count: {} }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          year: "$_id",
+          connectionCount: 1
+        }
+      },
+      {
+        $sort: { year: -1 } // Sort by year descending
+      }
+    ]);
+    
+    return res.status(200).json({
+      success: true,
+      data: statsArray
+    });
+  } catch (error) {
+    console.error('Error generating statistics:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error generating statistics',
+      error: error.message
+    });
+  }
+};
+
+// Bulk import connections
+export const bulkImportConnections = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  
+  try {
+    const { connections } = req.body;
+    
+    if (!connections || !Array.isArray(connections) || connections.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid connections array is required'
+      });
+    }
+    
+    const result = {
+      created: 0,
+      updated: 0,
+      failed: 0,
+      errors: []
+    };
+    
+    // Process each connection
+    for (const conn of connections) {
+      try {
+        const { sourceProvinceId, targetProvinceId, year } = conn;
+        
+        // Validate required fields
+        if (!sourceProvinceId || !targetProvinceId || !year) {
+          throw new Error('Missing required fields');
+        }
+        
+        // Check if source and target are the same
+        if (sourceProvinceId === targetProvinceId) {
+          throw new Error('Source and target provinces cannot be the same');
+        }
+        
+        // Check if provinces exist
+        const sourceProvince = await Province.findById(sourceProvinceId);
+        const targetProvince = await Province.findById(targetProvinceId);
+        
+        if (!sourceProvince || !targetProvince) {
+          throw new Error(`One or both provinces not found`);
+        }
+        
+        // Check if connection already exists
+        const existingConnection = await ProvinceConnection.findOne({
+          sourceProvinceId,
+          targetProvinceId,
+          year
+        });
+        
+        if (existingConnection) {
+          // Update existing connection
+          await existingConnection.save({ session });
+          result.updated++;
+        } else {
+          // Create new connection
+          await ProvinceConnection.create([{
+            sourceProvinceId,
+            targetProvinceId,
+            year
+          }], { session });
+          result.created++;
+        }
+      } catch (error) {
+        result.failed++;
+        result.errors.push({
+          connection: conn,
+          error: error.message
+        });
+      }
+    }
+    
+    await session.commitTransaction();
+    session.endSession();
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Bulk import completed',
+      result
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    
+    console.error('Error bulk importing connections:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error bulk importing connections',
+      error: error.message
+    });
+  }
+};

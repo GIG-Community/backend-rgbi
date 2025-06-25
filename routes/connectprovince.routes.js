@@ -22,11 +22,11 @@ router.get('/', (req, res) => {
 // router.get('/statistics', connectProvinceController.getConnectionStatistics);
 
 // Protected routes for CRUD operations
-router.post('/initialize', 
-  authenticate, 
-  authorize(['petugas_lapangan', 'pemerintah']),
-  connectProvinceController.initializeProvinces
-);
+// router.post('/initialize', 
+//   authenticate, 
+//   authorize(['petugas_lapangan', 'pemerintah']),
+//   connectProvinceController.initializeProvinces
+// );
 
 router.post('/connection', 
   authenticate, 

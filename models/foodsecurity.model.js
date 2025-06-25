@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 import { getProvinsiList } from '../utils/extractProvince.js';
 
-// Get the same province list used in the user model
 const provinsiList = getProvinsiList();
 
 const foodSecuritySchema = new mongoose.Schema({
@@ -25,6 +24,7 @@ const foodSecuritySchema = new mongoose.Schema({
       message: props => `${props.value} is not a valid year. Year must be an integer.`
     }
   },
+  
   // DEPENDENT VARIABLE
   dependent_variable: {
     indeks_ketahanan_pangan: { 
@@ -35,30 +35,67 @@ const foodSecuritySchema = new mongoose.Schema({
     }
   },
 
-  // INDEPENDENT VARIABLES
+  // UPDATED INDEPENDENT VARIABLES - berdasarkan data baru
   independent_variables: {
-    ketersediaan: {
-      produksi_padi: { type: Number, required: true }, // ton
-      luas_panen_padi: { type: Number, required: true }, // hektar
-      produktivitas_padi: { type: Number, required: true } // kuintal/hektar
+    produktivitas_padi: { 
+      type: Number, 
+      required: true,
+      comment: 'Kuintal/hektar'
     },
-    aksesibilitas: {
-      pendapatan_per_kapita: { type: Number, required: true }, // Rupiah
-      persentase_penduduk_miskin: { type: Number, required: true }, // %
-      harga_beras: { type: Number, required: true } // Rp/kg
+    persentase_penduduk_miskin: { 
+      type: Number, 
+      required: true,
+      min: 0,
+      max: 100,
+      comment: 'Persen (%)'
     },
-    pemanfaatan: {
-      pengeluaran_makanan: { type: Number, required: true }, // %
-      prevalence_of_undernourishment: { type: Number, required: true }, // %
-      food_security_experience_scale: { type: Number, required: true }, // skala
-      akses_air_minum: { type: Number, required: true }, // %
-      akses_sanitasi: { type: Number, required: true } // %
+    harga_komdistas_beras: { 
+      type: Number, 
+      required: true,
+      comment: 'Rupiah per kilogram'
     },
-    stabilitas: {
-      ketidakcukupan_konsumsi_pangan: { type: Number, required: true }, // %
-      penerima_bansos: { type: Number, required: true } // orang
+    persentase_pengeluaran_makanan: { 
+      type: Number, 
+      required: true,
+      min: 0,
+      max: 100,
+      comment: 'Persen pengeluaran per kapita sebulan untuk makanan (%)'
+    },
+    prevalensi_balita_stunting: { 
+      type: Number, 
+      required: true,
+      min: 0,
+      max: 100,
+      comment: 'Persen (%)'
+    },
+    ipm: { 
+      type: Number, 
+      required: true,
+      min: 0,
+      max: 100,
+      comment: 'Indeks Pembangunan Manusia'
+    },
+    kepadatan_penduduk: { 
+      type: Number, 
+      required: true,
+      min: 0,
+      comment: 'Jiwa per km²'
+    },
+    ahh: { 
+      type: Number, 
+      required: true,
+      min: 0,
+      comment: 'Angka Harapan Hidup (tahun)'
+    },
+    persentase_rumah_tangga_tanpa_listrik: { 
+      type: Number, 
+      required: true,
+      min: 0,
+      max: 100,
+      comment: 'Persen rumah tangga tanpa akses listrik (%)'
     }
   },
+  
   createdAt: {
     type: Date,
     default: Date.now

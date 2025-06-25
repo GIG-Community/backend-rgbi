@@ -84,8 +84,7 @@ export const getFoodSecurityByProvince = async (req, res, next) => {
       });
     }
     
-    // Build query using provinsi field (which stores province name in the existing model)
-    // We need to find food security data that matches this province's name
+    // Build query using provinsi field (which stores province name)
     let query = { provinsi: province.name };
     
     if (year) {
@@ -153,19 +152,18 @@ export const createFoodSecurityData = async (req, res, next) => {
 
     const { provinceId, tahun } = req.body;
     
-    // Verify province exists and get its name
-    const province = await Province.findById(provinceId);
-    if (!province) {
-      return res.status(404).json({
-        success: false,
-        message: 'Province not found'
-      });
-    }
-    
     // Validate year is an integer
     if (!Number.isInteger(tahun)) {
       const error = new Error('Year must be an integer');
       error.statusCode = 400;
+      throw error;
+    }
+    
+    // Verify province exists and get its name
+    const province = await Province.findById(provinceId);
+    if (!province) {
+      const error = new Error('Province not found');
+      error.statusCode = 404;
       throw error;
     }
     
@@ -178,30 +176,18 @@ export const createFoodSecurityData = async (req, res, next) => {
       throw error;
     }
     
-    // Add default values for required fields based on the validation error
+    // Add default values for required fields based on the new structure
     const defaultData = {
       independent_variables: {
-        ketersediaan: {
-          produksi_padi: 0,
-          luas_panen_padi: 0,
-          produktivitas_padi: 0
-        },
-        aksesibilitas: {
-          pendapatan_per_kapita: 0,
-          persentase_penduduk_miskin: 0,
-          harga_beras: 0
-        },
-        pemanfaatan: {
-          pengeluaran_makanan: 0,
-          prevalence_of_undernourishment: 0,
-          food_security_experience_scale: 0,
-          akses_air_minum: 0,
-          akses_sanitasi: 0
-        },
-        stabilitas: {
-          ketidakcukupan_konsumsi_pangan: 0,
-          penerima_bansos: 0
-        }
+        produktivitas_padi: 0,
+        persentase_penduduk_miskin: 0,
+        harga_komdistas_beras: 0,
+        persentase_pengeluaran_makanan: 0,
+        prevalensi_balita_stunting: 0,
+        ipm: 0,
+        kepadatan_penduduk: 0,
+        ahh: 0,
+        persentase_rumah_tangga_tanpa_listrik: 0
       }
     };
     
@@ -215,23 +201,7 @@ export const createFoodSecurityData = async (req, res, next) => {
       provinceReference: provinceId,
       independent_variables: {
         ...defaultData.independent_variables,
-        ...(req.body.independent_variables || {}),
-        ketersediaan: {
-          ...defaultData.independent_variables.ketersediaan,
-          ...(req.body.independent_variables?.ketersediaan || {})
-        },
-        aksesibilitas: {
-          ...defaultData.independent_variables.aksesibilitas,
-          ...(req.body.independent_variables?.aksesibilitas || {})
-        },
-        pemanfaatan: {
-          ...defaultData.independent_variables.pemanfaatan,
-          ...(req.body.independent_variables?.pemanfaatan || {})
-        },
-        stabilitas: {
-          ...defaultData.independent_variables.stabilitas,
-          ...(req.body.independent_variables?.stabilitas || {})
-        }
+        ...(req.body.independent_variables || {})
       },
       createdBy: req.user.name,
       userRole: req.user.role

@@ -87,12 +87,12 @@ const foodSecuritySchema = new mongoose.Schema({
       min: 0,
       comment: 'Angka Harapan Hidup (tahun)'
     },
-    persentase_rumah_tangga_tanpa_listrik: { 
+    persentase_rumah_tangga_dengan_listrik: { 
       type: Number, 
       required: true,
       min: 0,
       max: 100,
-      comment: 'Persen rumah tangga tanpa akses listrik (%)'
+      comment: 'Persen rumah tangga dengan akses listrik (%)'
     }
   },
   

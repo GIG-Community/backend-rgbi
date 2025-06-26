@@ -187,7 +187,7 @@ export const createFoodSecurityData = async (req, res, next) => {
         ipm: 0,
         kepadatan_penduduk: 0,
         ahh: 0,
-        persentase_rumah_tangga_tanpa_listrik: 0
+        persentase_rumah_tangga_dengan_listrik: 0
       }
     };
     

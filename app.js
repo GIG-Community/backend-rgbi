@@ -1,4 +1,5 @@
 import express from 'express';
+import cors from 'cors';
 import {PORT} from "./config/env.js";
 import userRoutes from "./routes/user.routes.js";
 import authRoutes from "./routes/auth.routes.js";
@@ -9,9 +10,17 @@ import provinceRoutes from "./routes/province.routes.js"; // Changed from import
 import connectToDatabase from "./database/mongodb.js";
 import errorMiddleware from "./middlewares/error.middleware.js";
 import cookieParser from "cookie-parser";
-import mapRoutes from "./routes/map.routes.js"; // Import map routes if needed
+import mapRoutes from './routes/map.routes.js';
 
 const app = express();
+
+// Add CORS middleware before other middleware
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://localhost:3001'], // Add your frontend URLs
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
+}));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -19,7 +28,7 @@ app.use(cookieParser());
 
 // Add this to debug incoming requests
 app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path}`);
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
 
@@ -30,6 +39,16 @@ app.use('/api/v1/supply-chain', supplyChainRoutes); // Add supply chain routes
 app.use('/api/v1/connect-province', connectProvinceRoutes);
 app.use('/api/v1/provinces', provinceRoutes); // Fixed to use the router instead of the model
 app.use('/api/v1/map', mapRoutes); // Add map routes if needed
+
+// Add a catch-all error handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({
+    success: false,
+    message: 'Internal server error',
+    error: err.message
+  });
+});
 
 // Make sure to use the error middleware
 app.use(errorMiddleware);

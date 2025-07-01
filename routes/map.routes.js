@@ -1,21 +1,37 @@
 import express from 'express';
-import * as mapController from '../controllers/map.controller.js';
+import {
+  getFoodSecurityMapData,
+  getSupplyChainMapData,
+  getConnectionsMapData,
+  getCombinedMapData,
+  getProvincesBaseMap,
+  getMapDebugInfo,
+  getProvinceMapDetails,
+  getProvinceMapSummary,
+  getProvinceMapDataById,
+  getMultipleProvincesMapData
+} from '../controllers/map.controller.js';
 
 const router = express.Router();
 
-// Base map endpoints
-router.get('/provinces', mapController.getProvincesBaseMap);
-// router.get('/debug', mapController.getMapDebugInfo);
+// Base map routes
+router.get('/provinces', getProvincesBaseMap);
+router.get('/debug', getMapDebugInfo);
 
-// Province detail endpoints for map interaction
-router.get('/province/:id/details', mapController.getProvinceMapDetails);
-router.get('/province/:id/summary', mapController.getProvinceMapSummary);
+// Year-based map data routes
+router.get('/food-security/:year', getFoodSecurityMapData);
+router.get('/supply-chain/:year', getSupplyChainMapData);
+router.get('/connections/:year', getConnectionsMapData);
+router.get('/combined/:year', getCombinedMapData);
 
-// Data visualization endpoints
-router.get('/food-security/:year', mapController.getFoodSecurityMapData);
-router.get('/supply-chain/:year', mapController.getSupplyChainMapData);
-router.get('/connections/:year', mapController.getConnectionsMapData);
-router.get('/combined/:year', mapController.getCombinedMapData);
+// Province-specific routes
+router.get('/province/:id', getProvinceMapDetails);
+router.get('/province/:id/summary', getProvinceMapSummary);
+router.get('/province/:id/data', getProvinceMapDataById);
+router.get('/province/:id/geojson', getProvinceMapDataById); // Alias that auto-includes geojson
+
+// Multiple provinces route
+router.get('/provinces/data', getMultipleProvincesMapData);
 
 export default router;
 

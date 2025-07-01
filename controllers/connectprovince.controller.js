@@ -340,8 +340,8 @@ export const getProvinceGeoJSON = async (req, res) => {
       });
     }
 
-    // Check if province has geojson data
-    if (!province.geojson) {
+    // Check if province has geoData
+    if (!province.geoData) {
       return res.status(404).json({
         success: false,
         message: 'No GeoJSON data found for this province'
@@ -350,7 +350,7 @@ export const getProvinceGeoJSON = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: province.geojson
+      data: province.geoData
     });
   } catch (error) {
     console.error('Error getting province GeoJSON:', error);
@@ -384,8 +384,8 @@ export const getProvincePolygon = async (req, res) => {
       });
     }
 
-    // Check if province has polygon data
-    if (!province.polygon) {
+    // Check if province has polygon data in geoData
+    if (!province.geoData || !province.geoData.geometry) {
       return res.status(404).json({
         success: false,
         message: 'No polygon data found for this province'
@@ -394,7 +394,7 @@ export const getProvincePolygon = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: province.polygon
+      data: province.geoData.geometry
     });
   } catch (error) {
     console.error('Error getting province polygon:', error);
@@ -605,6 +605,352 @@ export const bulkImportConnections = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Error bulk importing connections',
+      error: error.message
+    });
+  }
+};
+
+// Get connections where a specific province is the source
+export const getConnectionsBySourceProvince = async (req, res) => {
+  try {
+    const { id: sourceProvinceId } = req.params;
+    const { year } = req.query;
+    
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(sourceProvinceId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid province ID format'
+      });
+    }
+
+    // Verify source province exists
+    const sourceProvince = await Province.findById(sourceProvinceId);
+    if (!sourceProvince) {
+      return res.status(404).json({
+        success: false,
+        message: 'Source province not found'
+      });
+    }
+
+    // Build query
+    let query = { sourceProvinceId };
+    if (year) {
+      const yearInt = parseInt(year, 10);
+      if (isNaN(yearInt) || yearInt < 2000 || yearInt > 2100) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid year. Year must be between 2000 and 2100'
+        });
+      }
+      query.year = yearInt;
+    }
+
+    // Find connections where this province is the source
+    const connections = await ProvinceConnection.find(query)
+      .populate('targetProvinceId', 'name code')
+      .sort({ year: -1, 'targetProvinceId.name': 1 });
+
+    if (!connections || connections.length === 0) {
+      return res.status(200).json({
+        success: true,
+        sourceProvince: {
+          id: sourceProvince._id,
+          name: sourceProvince.name,
+          code: sourceProvince.code
+        },
+        year: year || 'All years',
+        message: 'No outgoing connections found for this province',
+        count: 0,
+        data: []
+      });
+    }
+
+    // Format the response to show destinations
+    const destinations = connections.map(conn => ({
+      connectionId: conn._id,
+      targetProvince: {
+        id: conn.targetProvinceId._id,
+        name: conn.targetProvinceId.name,
+        code: conn.targetProvinceId.code
+      },
+      year: conn.year,
+      createdAt: conn.createdAt
+    }));
+
+    return res.status(200).json({
+      success: true,
+      sourceProvince: {
+        id: sourceProvince._id,
+        name: sourceProvince.name,
+        code: sourceProvince.code
+      },
+      year: year || 'All years',
+      count: destinations.length,
+      destinations: destinations
+    });
+  } catch (error) {
+    console.error('Error getting connections by source province:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// Get connections where a specific province is the source for a specific year
+export const getConnectionsBySourceProvinceAndYear = async (req, res) => {
+  try {
+    const { id: sourceProvinceId, year } = req.params;
+    
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(sourceProvinceId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid province ID format'
+      });
+    }
+
+    // Validate year
+    const yearInt = parseInt(year, 10);
+    if (isNaN(yearInt) || yearInt < 2000 || yearInt > 2100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid year. Year must be between 2000 and 2100'
+      });
+    }
+
+    // Verify source province exists
+    const sourceProvince = await Province.findById(sourceProvinceId);
+    if (!sourceProvince) {
+      return res.status(404).json({
+        success: false,
+        message: 'Source province not found'
+      });
+    }
+
+    // Find connections for specific source province and year
+    const connections = await ProvinceConnection.find({ 
+      sourceProvinceId,
+      year: yearInt
+    }).populate('targetProvinceId', 'name code')
+      .sort({ 'targetProvinceId.name': 1 });
+
+    if (!connections || connections.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: `No connections found from ${sourceProvince.name} in year ${yearInt}`,
+        sourceProvince: {
+          id: sourceProvince._id,
+          name: sourceProvince.name,
+          code: sourceProvince.code
+        },
+        year: yearInt
+      });
+    }
+
+    // Format the response to show destinations
+    const destinations = connections.map(conn => ({
+      connectionId: conn._id,
+      targetProvince: {
+        id: conn.targetProvinceId._id,
+        name: conn.targetProvinceId.name,
+        code: conn.targetProvinceId.code
+      },
+      year: conn.year,
+      createdAt: conn.createdAt
+    }));
+
+    return res.status(200).json({
+      success: true,
+      sourceProvince: {
+        id: sourceProvince._id,
+        name: sourceProvince.name,
+        code: sourceProvince.code
+      },
+      year: yearInt,
+      count: destinations.length,
+      destinations: destinations
+    });
+  } catch (error) {
+    console.error('Error getting connections by source province and year:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// Get connections where a specific province is the target
+export const getConnectionsByTargetProvince = async (req, res) => {
+  try {
+    const { id: targetProvinceId } = req.params;
+    const { year } = req.query;
+    
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(targetProvinceId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid province ID format'
+      });
+    }
+
+    // Verify target province exists
+    const targetProvince = await Province.findById(targetProvinceId);
+    if (!targetProvince) {
+      return res.status(404).json({
+        success: false,
+        message: 'Target province not found'
+      });
+    }
+
+    // Build query
+    let query = { targetProvinceId };
+    if (year) {
+      const yearInt = parseInt(year, 10);
+      if (isNaN(yearInt) || yearInt < 2000 || yearInt > 2100) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid year. Year must be between 2000 and 2100'
+        });
+      }
+      query.year = yearInt;
+    }
+
+    // Find connections where this province is the target
+    const connections = await ProvinceConnection.find(query)
+      .populate('sourceProvinceId', 'name code')
+      .sort({ year: -1, 'sourceProvinceId.name': 1 });
+
+    if (!connections || connections.length === 0) {
+      return res.status(200).json({
+        success: true,
+        targetProvince: {
+          id: targetProvince._id,
+          name: targetProvince.name,
+          code: targetProvince.code
+        },
+        year: year || 'All years',
+        message: 'No incoming connections found for this province',
+        count: 0,
+        data: []
+      });
+    }
+
+    // Format the response to show sources
+    const sources = connections.map(conn => ({
+      connectionId: conn._id,
+      sourceProvince: {
+        id: conn.sourceProvinceId._id,
+        name: conn.sourceProvinceId.name,
+        code: conn.sourceProvinceId.code
+      },
+      year: conn.year,
+      createdAt: conn.createdAt
+    }));
+
+    return res.status(200).json({
+      success: true,
+      targetProvince: {
+        id: targetProvince._id,
+        name: targetProvince.name,
+        code: targetProvince.code
+      },
+      year: year || 'All years',
+      count: sources.length,
+      sources: sources
+    });
+  } catch (error) {
+    console.error('Error getting connections by target province:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// Get connections where a specific province is the target for a specific year
+export const getConnectionsByTargetProvinceAndYear = async (req, res) => {
+  try {
+    const { id: targetProvinceId, year } = req.params;
+    
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(targetProvinceId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid province ID format'
+      });
+    }
+
+    // Validate year
+    const yearInt = parseInt(year, 10);
+    if (isNaN(yearInt) || yearInt < 2000 || yearInt > 2100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid year. Year must be between 2000 and 2100'
+      });
+    }
+
+    // Verify target province exists
+    const targetProvince = await Province.findById(targetProvinceId);
+    if (!targetProvince) {
+      return res.status(404).json({
+        success: false,
+        message: 'Target province not found'
+      });
+    }
+
+    // Find connections for specific target province and year
+    const connections = await ProvinceConnection.find({ 
+      targetProvinceId,
+      year: yearInt
+    }).populate('sourceProvinceId', 'name code')
+      .sort({ 'sourceProvinceId.name': 1 });
+
+    if (!connections || connections.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: `No connections found to ${targetProvince.name} in year ${yearInt}`,
+        targetProvince: {
+          id: targetProvince._id,
+          name: targetProvince.name,
+          code: targetProvince.code
+        },
+        year: yearInt
+      });
+    }
+
+    // Format the response to show sources
+    const sources = connections.map(conn => ({
+      connectionId: conn._id,
+      sourceProvince: {
+        id: conn.sourceProvinceId._id,
+        name: conn.sourceProvinceId.name,
+        code: conn.sourceProvinceId.code
+      },
+      year: conn.year,
+      createdAt: conn.createdAt
+    }));
+
+    return res.status(200).json({
+      success: true,
+      targetProvince: {
+        id: targetProvince._id,
+        name: targetProvince.name,
+        code: targetProvince.code
+      },
+      year: yearInt,
+      count: sources.length,
+      sources: sources
+    });
+  } catch (error) {
+    console.error('Error getting connections by target province and year:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
       error: error.message
     });
   }

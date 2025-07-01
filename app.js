@@ -9,6 +9,7 @@ import provinceRoutes from "./routes/province.routes.js"; // Changed from import
 import connectToDatabase from "./database/mongodb.js";
 import errorMiddleware from "./middlewares/error.middleware.js";
 import cookieParser from "cookie-parser";
+import mapRoutes from "./routes/map.routes.js"; // Import map routes if needed
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.use('/api/v1/food-securities', foodSecurityRoutes);
 app.use('/api/v1/supply-chain', supplyChainRoutes); // Add supply chain routes
 app.use('/api/v1/connect-province', connectProvinceRoutes);
 app.use('/api/v1/provinces', provinceRoutes); // Fixed to use the router instead of the model
+app.use('/api/v1/map', mapRoutes); // Add map routes if needed
 
 // Make sure to use the error middleware
 app.use(errorMiddleware);

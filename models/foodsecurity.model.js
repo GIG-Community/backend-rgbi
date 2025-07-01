@@ -35,6 +35,22 @@ const foodSecuritySchema = new mongoose.Schema({
     }
   },
 
+  // FOOD SECURITY CATEGORY
+  kategori_ketahanan_pangan: {
+    kategori: {
+      type: Number,
+      min: 1,
+      max: 6
+    },
+    label: {
+      type: String,
+      enum: ['Sangat Rentan', 'Rentan', 'Agak Rentan', 'Agak Tahan', 'Tahan', 'Sangat Tahan', 'Tidak Valid']
+    },
+    deskripsi: {
+      type: String
+    }
+  },
+
   // UPDATED INDEPENDENT VARIABLES - berdasarkan data baru
   independent_variables: {
     produktivitas_padi: { 
@@ -49,7 +65,7 @@ const foodSecuritySchema = new mongoose.Schema({
       max: 100,
       comment: 'Persen (%)'
     },
-    harga_komdistas_beras: { 
+    harga_komoditas_beras: { 
       type: Number, 
       required: true,
       comment: 'Rupiah per kilogram'
@@ -119,10 +135,67 @@ const foodSecuritySchema = new mongoose.Schema({
 
 // Add index to improve query performance
 foodSecuritySchema.index({ provinsi: 1, tahun: 1 }, { unique: true });
+foodSecuritySchema.index({ 'kategori_ketahanan_pangan.kategori': 1 });
+foodSecuritySchema.index({ tahun: 1 });
 
-// Update the updatedAt timestamp on save
+// Method to determine food security category
+foodSecuritySchema.methods.determineFoodSecurityCategory = function() {
+  const indeks = this.dependent_variable.indeks_ketahanan_pangan;
+  
+  if (indeks <= 37.61) {
+    return {
+      kategori: 1,
+      label: 'Sangat Rentan',
+      deskripsi: 'Prioritas 1 (Sangat Rentan)'
+    };
+  } else if (indeks > 37.61 && indeks <= 48.27) {
+    return {
+      kategori: 2,
+      label: 'Rentan',
+      deskripsi: 'Prioritas 2 (Rentan)'
+    };
+  } else if (indeks > 48.27 && indeks <= 57.11) {
+    return {
+      kategori: 3,
+      label: 'Agak Rentan',
+      deskripsi: 'Prioritas 3 (Agak Rentan)'
+    };
+  } else if (indeks > 57.11 && indeks <= 65.96) {
+    return {
+      kategori: 4,
+      label: 'Agak Tahan',
+      deskripsi: 'Prioritas 4 (Agak Tahan)'
+    };
+  } else if (indeks > 65.96 && indeks <= 74.40) {
+    return {
+      kategori: 5,
+      label: 'Tahan',
+      deskripsi: 'Prioritas 5 (Tahan)'
+    };
+  } else if (indeks > 74.40) {
+    return {
+      kategori: 6,
+      label: 'Sangat Tahan',
+      deskripsi: 'Prioritas 6 (Sangat Tahan)'
+    };
+  } else {
+    return {
+      kategori: null,
+      label: 'Tidak Valid',
+      deskripsi: 'Indeks tidak valid'
+    };
+  }
+};
+
+// Pre-save hook to automatically set category
 foodSecuritySchema.pre('save', function(next) {
   this.updatedAt = Date.now();
+  
+  // Auto-determine category if not set
+  if (!this.kategori_ketahanan_pangan || !this.kategori_ketahanan_pangan.kategori) {
+    this.kategori_ketahanan_pangan = this.determineFoodSecurityCategory();
+  }
+  
   next();
 });
 

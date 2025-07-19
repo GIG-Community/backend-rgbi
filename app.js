@@ -16,7 +16,14 @@ const app = express();
 
 // Add CORS middleware before other middleware
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:3001'], // Add your frontend URLs
+  origin: [
+    'http://localhost:3000', 
+    'http://localhost:3001',
+    'https://pangan-id.com',
+    'https://www.pangan-id.com',
+    'http://pangan-id.com',
+    'http://www.pangan-id.com'
+  ], // Add your frontend URLs
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
@@ -59,6 +66,8 @@ app.get("/", (req, res) => {
 
 app.listen(PORT, async ()=>{
     console.log(`Server started on http://localhost:${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV}`);
+    console.log(`CORS allowed origins: ${process.env.NODE_ENV === 'production' ? 'pangan-id.com domains' : 'localhost domains'}`);
     await connectToDatabase();
 });
 

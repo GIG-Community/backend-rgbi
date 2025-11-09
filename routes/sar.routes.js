@@ -5,23 +5,26 @@ import * as sarController from '../controllers/sar.controller.js';
 const router = express.Router();
 
 // GET /api/sar - Get all SAR records
-router.get('/', authenticate, sarController.getAllSAR);
+router.get('/', sarController.getAllSAR);
+
+// GET /api/sar/main/:provinceId - Get SAR by main province (BEFORE /:id)
+router.get('/main/:provinceId', sarController.getSARByMainProvince);
+
+// POST /api/sar/bulk - Bulk create SAR records (BEFORE /:id)
+router.post('/bulk', 
+  authenticate, 
+  authorize(['petugas_lapangan', 'pemerintah']), 
+  sarController.bulkCreateSAR
+);
 
 // GET /api/sar/:id - Get SAR by ID
-router.get('/:id', authenticate, sarController.getSARById);
+router.get('/:id', sarController.getSARById);
 
 // POST /api/sar - Create new SAR record
 router.post('/', 
   authenticate, 
   authorize(['petugas_lapangan', 'pemerintah']), 
   sarController.createSAR
-);
-
-// POST /api/sar/bulk - Bulk create SAR records
-router.post('/bulk', 
-  authenticate, 
-  authorize(['petugas_lapangan', 'pemerintah']), 
-  sarController.bulkCreateSAR
 );
 
 // PUT /api/sar/:id - Update SAR record
@@ -37,8 +40,5 @@ router.delete('/:id',
   authorize(['petugas_lapangan', 'pemerintah']), 
   sarController.deleteSAR
 );
-
-// GET /api/sar/main/:provinceId - Get SAR by main province
-router.get('/main/:provinceId', authenticate, sarController.getSARByMainProvince);
 
 export default router;

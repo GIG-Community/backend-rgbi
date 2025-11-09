@@ -5,23 +5,26 @@ import * as mppController from '../controllers/mpp.controller.js';
 const router = express.Router();
 
 // GET /api/mpp - Get all MPP records
-router.get('/', authenticate, mppController.getAllMPP);
+router.get('/', mppController.getAllMPP);
+
+// GET /api/mpp/source/:provinceId - Get MPP by source province (BEFORE /:id)
+router.get('/source/:provinceId', mppController.getMPPBySourceProvince);
+
+// POST /api/mpp/bulk - Bulk create MPP records (BEFORE /:id)
+router.post('/bulk', 
+  authenticate, 
+  authorize(['petugas_lapangan', 'pemerintah']), 
+  mppController.bulkCreateMPP
+);
 
 // GET /api/mpp/:id - Get MPP by ID
-router.get('/:id', authenticate, mppController.getMPPById);
+router.get('/:id', mppController.getMPPById);
 
 // POST /api/mpp - Create new MPP record
 router.post('/', 
   authenticate, 
   authorize(['petugas_lapangan', 'pemerintah']), 
   mppController.createMPP
-);
-
-// POST /api/mpp/bulk - Bulk create MPP records
-router.post('/bulk', 
-  authenticate, 
-  authorize(['petugas_lapangan', 'pemerintah']), 
-  mppController.bulkCreateMPP
 );
 
 // PUT /api/mpp/:id - Update MPP record
@@ -37,8 +40,5 @@ router.delete('/:id',
   authorize(['petugas_lapangan', 'pemerintah']), 
   mppController.deleteMPP
 );
-
-// GET /api/mpp/source/:provinceId - Get MPP by source province
-router.get('/source/:provinceId', authenticate, mppController.getMPPBySourceProvince);
 
 export default router;

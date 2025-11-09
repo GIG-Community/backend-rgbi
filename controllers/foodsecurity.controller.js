@@ -4,10 +4,22 @@ import Province from '../models/province.model.js';
 import asyncHandler from '../utils/asyncHandler.js';
 
 /**
- * Get all food security data with pagination
+ * Get all food security data with pagination and filtering
  */
 export const getAllFoodSecurityData = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 10, sortBy = 'createdAt', order = 'desc' } = req.query;
+  const { 
+    page = 1, 
+    limit = 10, 
+    sortBy = 'createdAt', 
+    order = 'desc',
+    tahun,
+    tahunMin,
+    tahunMax,
+    provinsi,
+    fields,
+    dependentVar,
+    independentVars
+  } = req.query;
   
   const options = {
     page: parseInt(page, 10),
@@ -15,16 +27,74 @@ export const getAllFoodSecurityData = asyncHandler(async (req, res) => {
     sort: { [sortBy]: order === 'desc' ? -1 : 1 }
   };
   
-  const foodSecurityData = await FoodSecurity.find()
+  // Build filter query
+  let filter = {};
+  
+  // Year filtering
+  if (tahun) {
+    filter.tahun = parseInt(tahun, 10);
+  } else if (tahunMin || tahunMax) {
+    filter.tahun = {};
+    if (tahunMin) filter.tahun.$gte = parseInt(tahunMin, 10);
+    if (tahunMax) filter.tahun.$lte = parseInt(tahunMax, 10);
+  }
+  
+  // Province filtering
+  if (provinsi) {
+    filter.provinsi = { $regex: provinsi, $options: 'i' };
+  }
+  
+  // Variable range filtering for dependent variable
+  if (dependentVar) {
+    const { min, max } = JSON.parse(dependentVar);
+    if (min !== undefined || max !== undefined) {
+      filter['dependent_variable.prevalence_of_undernourishment'] = {};
+      if (min !== undefined) filter['dependent_variable.prevalence_of_undernourishment'].$gte = parseFloat(min);
+      if (max !== undefined) filter['dependent_variable.prevalence_of_undernourishment'].$lte = parseFloat(max);
+    }
+  }
+  
+  // Variable range filtering for independent variables
+  if (independentVars) {
+    const indepFilters = JSON.parse(independentVars);
+    Object.keys(indepFilters).forEach(key => {
+      const { min, max } = indepFilters[key];
+      if (min !== undefined || max !== undefined) {
+        filter[`independent_variables.${key}`] = {};
+        if (min !== undefined) filter[`independent_variables.${key}`].$gte = parseFloat(min);
+        if (max !== undefined) filter[`independent_variables.${key}`].$lte = parseFloat(max);
+      }
+    });
+  }
+  
+  // Field selection
+  let projection = {};
+  if (fields) {
+    const selectedFields = fields.split(',').map(field => field.trim());
+    selectedFields.forEach(field => {
+      projection[field] = 1;
+    });
+    // Always include _id, provinsi, and tahun for reference
+    projection._id = 1;
+    projection.provinsi = 1;
+    projection.tahun = 1;
+  }
+  
+  const query = FoodSecurity.find(filter, projection)
     .skip((options.page - 1) * options.limit)
     .limit(options.limit)
     .sort(options.sort);
   
-  const total = await FoodSecurity.countDocuments();
+  const foodSecurityData = await query.exec();
+  const total = await FoodSecurity.countDocuments(filter);
   
   res.status(200).json({
     success: true,
     data: foodSecurityData,
+    filters: {
+      applied: filter,
+      selectedFields: fields ? fields.split(',') : 'all'
+    },
     pagination: {
       total,
       page: options.page,
@@ -39,6 +109,7 @@ export const getAllFoodSecurityData = asyncHandler(async (req, res) => {
  */
 export const getFoodSecurityById = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const { fields } = req.query;
   
   if (!mongoose.Types.ObjectId.isValid(id)) {
     return res.status(400).json({
@@ -47,7 +118,17 @@ export const getFoodSecurityById = asyncHandler(async (req, res) => {
     });
   }
   
-  const foodSecurityData = await FoodSecurity.findById(id);
+  // Field selection
+  let projection = {};
+  if (fields) {
+    const selectedFields = fields.split(',').map(field => field.trim());
+    selectedFields.forEach(field => {
+      projection[field] = 1;
+    });
+    projection._id = 1;
+  }
+  
+  const foodSecurityData = await FoodSecurity.findById(id, projection);
   
   if (!foodSecurityData) {
     return res.status(404).json({
@@ -67,7 +148,7 @@ export const getFoodSecurityById = asyncHandler(async (req, res) => {
  */
 export const getFoodSecurityByProvince = asyncHandler(async (req, res) => {
   const { id: provinceId } = req.params;
-  const { year } = req.query;
+  const { year, fields, sortBy = 'tahun', order = 'desc' } = req.query;
   
   // Validate ObjectId format
   if (!mongoose.Types.ObjectId.isValid(provinceId)) {
@@ -93,7 +174,20 @@ export const getFoodSecurityByProvince = asyncHandler(async (req, res) => {
     query.tahun = parseInt(year, 10);
   }
   
-  const foodSecurityData = await FoodSecurity.find(query).sort({ tahun: -1 });
+  // Field selection
+  let projection = {};
+  if (fields) {
+    const selectedFields = fields.split(',').map(field => field.trim());
+    selectedFields.forEach(field => {
+      projection[field] = 1;
+    });
+    projection._id = 1;
+    projection.provinsi = 1;
+    projection.tahun = 1;
+  }
+  
+  const sortOptions = { [sortBy]: order === 'desc' ? -1 : 1 };
+  const foodSecurityData = await FoodSecurity.find(query, projection).sort(sortOptions);
   
   return res.status(200).json({
     success: true,
@@ -112,6 +206,7 @@ export const getFoodSecurityByProvince = asyncHandler(async (req, res) => {
  */
 export const getFoodSecurityByYear = asyncHandler(async (req, res) => {
   const { year } = req.params;
+  const { fields, sortBy = 'provinsi', order = 'asc' } = req.query;
   const yearInt = parseInt(year, 10);
   
   if (isNaN(yearInt) || yearInt < 2000 || yearInt > 2100) {
@@ -121,13 +216,287 @@ export const getFoodSecurityByYear = asyncHandler(async (req, res) => {
     });
   }
   
-  const foodSecurityData = await FoodSecurity.find({ tahun: yearInt });
+  // Field selection
+  let projection = {};
+  if (fields) {
+    const selectedFields = fields.split(',').map(field => field.trim());
+    selectedFields.forEach(field => {
+      projection[field] = 1;
+    });
+    projection._id = 1;
+    projection.provinsi = 1;
+    projection.tahun = 1;
+  }
+  
+  const sortOptions = { [sortBy]: order === 'desc' ? -1 : 1 };
+  const foodSecurityData = await FoodSecurity.find({ tahun: yearInt }, projection).sort(sortOptions);
   
   res.status(200).json({
     success: true,
     year: yearInt,
     count: foodSecurityData.length,
     data: foodSecurityData
+  });
+});
+
+/**
+ * Get food security data by province and year (specific combination)
+ */
+export const getFoodSecurityByProvinceAndYear = asyncHandler(async (req, res) => {
+  const { id: provinceId, year } = req.params;
+  const { fields } = req.query;
+  
+  // Validate ObjectId format
+  if (!mongoose.Types.ObjectId.isValid(provinceId)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid province ID format'
+    });
+  }
+  
+  // Validate year
+  const yearInt = parseInt(year, 10);
+  if (isNaN(yearInt) || yearInt < 2000 || yearInt > 2100) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid year. Year must be between 2000 and 2100'
+    });
+  }
+  
+  // Verify province exists
+  const province = await Province.findById(provinceId);
+  if (!province) {
+    return res.status(404).json({
+      success: false,
+      message: 'Province not found'
+    });
+  }
+  
+  // Build query using provinsi field and year
+  const query = { 
+    provinsi: province.name,
+    tahun: yearInt
+  };
+  
+  // Field selection
+  let projection = {};
+  if (fields) {
+    const selectedFields = fields.split(',').map(field => field.trim());
+    selectedFields.forEach(field => {
+      projection[field] = 1;
+    });
+    projection._id = 1;
+    projection.provinsi = 1;
+    projection.tahun = 1;
+  }
+  
+  const foodSecurityData = await FoodSecurity.findOne(query, projection);
+  
+  if (!foodSecurityData) {
+    return res.status(404).json({
+      success: false,
+      message: `No food security data found for ${province.name} in year ${yearInt}`,
+      province: {
+        id: province._id,
+        name: province.name,
+        code: province.code
+      },
+      year: yearInt
+    });
+  }
+  
+  return res.status(200).json({
+    success: true,
+    province: {
+      id: province._id,
+      name: province.name,
+      code: province.code
+    },
+    year: yearInt,
+    data: foodSecurityData
+  });
+});
+
+/**
+ * Get average food security index by year
+ */
+export const getAverageFoodSecurityByYear = asyncHandler(async (req, res) => {
+  const { year } = req.params;
+  const yearInt = parseInt(year, 10);
+  
+  if (isNaN(yearInt) || yearInt < 2000 || yearInt > 2100) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid year. Year must be between 2000 and 2100'
+    });
+  }
+  
+  const result = await FoodSecurity.aggregate([
+    { 
+      $match: { tahun: yearInt } 
+    },
+    { 
+      $group: { 
+        _id: null,
+        averageIndex: { $avg: '$dependent_variable.prevalence_of_undernourishment' },
+        minIndex: { $min: '$dependent_variable.prevalence_of_undernourishment' },
+        maxIndex: { $max: '$dependent_variable.prevalence_of_undernourishment' },
+        count: { $sum: 1 }
+      } 
+    }
+  ]);
+  
+  const stats = result.length > 0 ? result[0] : {
+    averageIndex: 0,
+    minIndex: 0,
+    maxIndex: 0,
+    count: 0
+  };
+  
+  res.status(200).json({
+    success: true,
+    year: yearInt,
+    statistics: {
+      average: stats.averageIndex,
+      minimum: stats.minIndex,
+      maximum: stats.maxIndex,
+      range: stats.maxIndex - stats.minIndex
+    },
+    provincesCount: stats.count
+  });
+});
+
+/**
+ * Get food security trend for a province over years
+ */
+export const getFoodSecurityTrend = asyncHandler(async (req, res) => {
+  const { id: provinceId } = req.params;
+  
+  // Verify province exists
+  const province = await Province.findById(provinceId);
+  if (!province) {
+    return res.status(404).json({
+      success: false,
+      message: 'Province not found'
+    });
+  }
+  
+  const trend = await FoodSecurity.find(
+    { provinsi: province.name },
+    'tahun dependent_variable.prevalence_of_undernourishment'
+  ).sort({ tahun: 1 });
+  
+  if (trend.length === 0) {
+    return res.status(200).json({
+      success: true,
+      message: `No historical data found for province: ${province.name}`,
+      province: {
+        id: province._id,
+        name: province.name,
+        code: province.code
+      },
+      data: []
+    });
+  }
+  
+  const formattedTrend = trend.map(item => ({
+    year: item.tahun,
+    index: item.dependent_variable.prevalence_of_undernourishment
+  }));
+  
+  // Calculate change from previous year
+  for (let i = 1; i < formattedTrend.length; i++) {
+    formattedTrend[i].change = formattedTrend[i].index - formattedTrend[i-1].index;
+    formattedTrend[i].changePercentage = formattedTrend[i-1].index !== 0 ? 
+      ((formattedTrend[i].index - formattedTrend[i-1].index) / formattedTrend[i-1].index * 100).toFixed(2) : 
+      'N/A';
+  }
+  
+  res.status(200).json({
+    success: true,
+    province: {
+      id: province._id,
+      name: province.name,
+      code: province.code
+    },
+    yearRange: {
+      start: formattedTrend[0].year,
+      end: formattedTrend[formattedTrend.length - 1].year
+    },
+    data: formattedTrend
+  });
+});
+
+/**
+ * Get provinces ranked by food security index for a year
+ */
+export const getFoodSecurityRanking = asyncHandler(async (req, res) => {
+  const { year } = req.params;
+  const { limit } = req.query;
+  const yearInt = parseInt(year, 10);
+  
+  if (isNaN(yearInt) || yearInt < 2000 || yearInt > 2100) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid year. Year must be between 2000 and 2100'
+    });
+  }
+  
+  let query = FoodSecurity.find(
+    { tahun: yearInt },
+    'provinsi dependent_variable.prevalence_of_undernourishment'
+  ).sort({ 'dependent_variable.prevalence_of_undernourishment': 1 }); // 1 = ascending (lower is better for undernourishment)
+  
+  if (limit) {
+    query = query.limit(parseInt(limit, 10));
+  }
+  
+  const ranking = await query.exec();
+  
+  if (ranking.length === 0) {
+    return res.status(200).json({
+      success: true,
+      message: `No food security data found for year: ${yearInt}`,
+      year: yearInt,
+      ranking: []
+    });
+  }
+  
+  const formattedRanking = ranking.map((item, index) => ({
+    rank: index + 1,
+    province: item.provinsi,
+    index: item.dependent_variable.prevalence_of_undernourishment,
+    status: item.dependent_variable.prevalence_of_undernourishment < 5 ? 'Very Low' :
+            item.dependent_variable.prevalence_of_undernourishment < 15 ? 'Low' :
+            item.dependent_variable.prevalence_of_undernourishment < 25 ? 'Moderate' :
+            item.dependent_variable.prevalence_of_undernourishment < 35 ? 'High' : 'Very High'
+  }));
+  
+  res.status(200).json({
+    success: true,
+    year: yearInt,
+    totalProvinces: formattedRanking.length,
+    ranking: formattedRanking
+  });
+});
+
+/**
+ * Get food security statistics by category (placeholder)
+ */
+export const getFoodSecurityStatsByCategory = asyncHandler(async (req, res) => {
+  return res.status(501).json({
+    success: false,
+    message: 'Category functionality not implemented'
+  });
+});
+
+/**
+ * Get provinces by food security category (placeholder)
+ */
+export const getProvincesByCategory = asyncHandler(async (req, res) => {
+  return res.status(501).json({
+    success: false,
+    message: 'Category functionality not implemented'
   });
 });
 
@@ -172,18 +541,17 @@ export const createFoodSecurityData = asyncHandler(async (req, res) => {
       throw error;
     }
     
-    // Add default values for required fields based on the new structure
+    // Add default values for required fields based on the model structure
     const defaultData = {
       independent_variables: {
-        produktivitas_padi: 0,
-        persentase_penduduk_miskin: 0,
-        harga_komoditas_beras: 0,
-        persentase_pengeluaran_makanan: 0,
-        prevalensi_balita_stunting: 0,
-        ipm: 0,
+        persentase_nilai_perdagangan_domestik: 0,
+        indeks_harga_implisit: 0,
+        koefisien_gini: 0,
+        indeks_pembangunan_manusia: 0,
         kepadatan_penduduk: 0,
-        ahh: 0,
-        persentase_rumah_tangga_dengan_listrik: 0
+        ketersediaan_infrastruktur_jalan: 0,
+        indeks_kemahalan_konstruksi: 0,
+        indeks_demokrasi_indonesia: 0
       }
     };
     
@@ -404,372 +772,6 @@ export const deleteFoodSecurityData = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get average food security index by year
- */
-export const getAverageFoodSecurityByYear = asyncHandler(async (req, res) => {
-  const { year } = req.params;
-  const yearInt = parseInt(year, 10);
-  
-  if (isNaN(yearInt) || yearInt < 2000 || yearInt > 2100) {
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid year. Year must be between 2000 and 2100'
-    });
-  }
-  
-  const result = await FoodSecurity.aggregate([
-    { 
-      $match: { tahun: yearInt } 
-    },
-    { 
-      $group: { 
-        _id: null,
-        averageIndex: { $avg: '$dependent_variable.indeks_ketahanan_pangan' },
-        count: { $sum: 1 }
-      } 
-    }
-  ]);
-  
-  const averageIndex = result.length > 0 ? result[0].averageIndex : 0;
-  const count = result.length > 0 ? result[0].count : 0;
-  
-  res.status(200).json({
-    success: true,
-    year: yearInt,
-    averageIndex,
-    provincesCount: count
-  });
-});
-
-/**
- * Get food security trend for a province over years
- */
-export const getFoodSecurityTrend = asyncHandler(async (req, res) => {
-  const { id: provinceId } = req.params;
-  
-  // Verify province exists
-  const province = await Province.findById(provinceId);
-  if (!province) {
-    return res.status(404).json({
-      success: false,
-      message: 'Province not found'
-    });
-  }
-  
-  const trend = await FoodSecurity.find(
-    { provinsi: province.name },
-    'tahun dependent_variable.indeks_ketahanan_pangan'
-  ).sort({ tahun: 1 });
-  
-  if (trend.length === 0) {
-    return res.status(200).json({
-      success: true,
-      message: `No historical data found for province: ${province.name}`,
-      province: {
-        id: province._id,
-        name: province.name,
-        code: province.code
-      },
-      data: []
-    });
-  }
-  
-  const formattedTrend = trend.map(item => ({
-    year: item.tahun,
-    index: item.dependent_variable.indeks_ketahanan_pangan
-  }));
-  
-  // Calculate change from previous year
-  for (let i = 1; i < formattedTrend.length; i++) {
-    formattedTrend[i].change = formattedTrend[i].index - formattedTrend[i-1].index;
-    formattedTrend[i].changePercentage = ((formattedTrend[i].index - formattedTrend[i-1].index) / formattedTrend[i-1].index * 100).toFixed(2);
-  }
-  
-  res.status(200).json({
-    success: true,
-    province: {
-      id: province._id,
-      name: province.name,
-      code: province.code
-    },
-    data: formattedTrend
-  });
-});
-
-/**
- * Get provinces ranked by food security index for a year
- */
-export const getFoodSecurityRanking = asyncHandler(async (req, res) => {
-  const { year } = req.params;
-  const yearInt = parseInt(year, 10);
-  
-  if (isNaN(yearInt) || yearInt < 2000 || yearInt > 2100) {
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid year. Year must be between 2000 and 2100'
-    });
-  }
-  
-  const ranking = await FoodSecurity.find(
-    { tahun: yearInt },
-    'provinsi dependent_variable.indeks_ketahanan_pangan'
-  ).sort({ 'dependent_variable.indeks_ketahanan_pangan': -1 });
-  
-  if (ranking.length === 0) {
-    return res.status(200).json({
-      success: true,
-      message: `No food security data found for year: ${yearInt}`,
-      year: yearInt,
-      ranking: []
-    });
-  }
-  
-  const formattedRanking = ranking.map((item, index) => ({
-    rank: index + 1,
-    province: item.provinsi,
-    index: item.dependent_variable.indeks_ketahanan_pangan
-  }));
-  
-  res.status(200).json({
-    success: true,
-    year: yearInt,
-    totalProvinces: formattedRanking.length,
-    ranking: formattedRanking
-  });
-});
-
-/**
- * Determine food security category based on index value
- * @param {number} indeksKetahananPangan - Food security index value
- * @returns {object} Category information
- */
-const determineFoodSecurityCategory = (indeksKetahananPangan) => {
-  if (indeksKetahananPangan <= 37.61) {
-    return {
-      kategori: 1,
-      label: 'Sangat Rentan',
-      deskripsi: 'Prioritas 1 (Sangat Rentan)'
-    };
-  } else if (indeksKetahananPangan > 37.61 && indeksKetahananPangan <= 48.27) {
-    return {
-      kategori: 2,
-      label: 'Rentan',
-      deskripsi: 'Prioritas 2 (Rentan)'
-    };
-  } else if (indeksKetahananPangan > 48.27 && indeksKetahananPangan <= 57.11) {
-    return {
-      kategori: 3,
-      label: 'Agak Rentan',
-      deskripsi: 'Prioritas 3 (Agak Rentan)'
-    };
-  } else if (indeksKetahananPangan > 57.11 && indeksKetahananPangan <= 65.96) {
-    return {
-      kategori: 4,
-      label: 'Agak Tahan',
-      deskripsi: 'Prioritas 4 (Agak Tahan)'
-    };
-  } else if (indeksKetahananPangan > 65.96 && indeksKetahananPangan <= 74.40) {
-    return {
-      kategori: 5,
-      label: 'Tahan',
-      deskripsi: 'Prioritas 5 (Tahan)'
-    };
-  } else if (indeksKetahananPangan > 74.40) {
-    return {
-      kategori: 6,
-      label: 'Sangat Tahan',
-      deskripsi: 'Prioritas 6 (Sangat Tahan)'
-    };
-  } else {
-    return {
-      kategori: null,
-      label: 'Tidak Valid',
-      deskripsi: 'Indeks tidak valid'
-    };
-  }
-};
-
-/**
- * Update existing food security data with categories
- */
-export const updateFoodSecurityCategories = asyncHandler(async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  
-  try {
-    // Check if user is authenticated
-    if (!req.isAuthenticated || !req.user) {
-      const error = new Error('Authentication required');
-      error.statusCode = 401;
-      throw error;
-    }
-
-    // Get all food security data without categories
-    const foodSecurityData = await FoodSecurity.find({
-      $or: [
-        { 'kategori_ketahanan_pangan.kategori': { $exists: false } },
-        { 'kategori_ketahanan_pangan.kategori': null }
-      ]
-    });
-
-    if (foodSecurityData.length === 0) {
-      return res.status(200).json({
-        success: true,
-        message: 'All food security data already have categories assigned',
-        updated: 0
-      });
-    }
-
-    const result = {
-      updated: 0,
-      failed: 0,
-      errors: []
-    };
-
-    // Update each record with category
-    for (const data of foodSecurityData) {
-      try {
-        const indeksKetahananPangan = data.dependent_variable.indeks_ketahanan_pangan;
-        const categoryInfo = determineFoodSecurityCategory(indeksKetahananPangan);
-
-        await FoodSecurity.findByIdAndUpdate(
-          data._id,
-          {
-            $set: {
-              'kategori_ketahanan_pangan': categoryInfo,
-              updatedAt: new Date(),
-              updatedBy: req.user._id
-            }
-          },
-          { 
-            new: true, 
-            runValidators: true, 
-            session 
-          }
-        );
-
-        result.updated++;
-      } catch (error) {
-        result.failed++;
-        result.errors.push({
-          id: data._id,
-          provinsi: data.provinsi,
-          tahun: data.tahun,
-          error: error.message
-        });
-      }
-    }
-
-    await session.commitTransaction();
-    session.endSession();
-
-    return res.status(200).json({
-      success: true,
-      message: `Categories updated successfully. Updated: ${result.updated}, Failed: ${result.failed}`,
-      result: {
-        totalProcessed: foodSecurityData.length,
-        updated: result.updated,
-        failed: result.failed,
-        errors: result.errors
-      }
-    });
-
-  } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
-    
-    console.error('Error updating food security categories:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Error updating food security categories',
-      error: error.message
-    });
-  }
-});
-
-/**
- * Get food security statistics by category
- */
-export const getFoodSecurityStatsByCategory = asyncHandler(async (req, res) => {
-  const { tahun } = req.query;
-  
-  let matchCondition = {};
-  if (tahun) {
-    matchCondition.tahun = parseInt(tahun);
-  }
-
-  const stats = await FoodSecurity.aggregate([
-    { $match: matchCondition },
-    {
-      $group: {
-        _id: '$kategori_ketahanan_pangan.kategori',
-        count: { $sum: 1 },
-        label: { $first: '$kategori_ketahanan_pangan.label' },
-        deskripsi: { $first: '$kategori_ketahanan_pangan.deskripsi' },
-        avgIndex: { $avg: '$dependent_variable.indeks_ketahanan_pangan' },
-        minIndex: { $min: '$dependent_variable.indeks_ketahanan_pangan' },
-        maxIndex: { $max: '$dependent_variable.indeks_ketahanan_pangan' },
-        provinces: { $push: '$provinsi' }
-      }
-    },
-    {
-      $sort: { _id: 1 }
-    }
-  ]);
-
-  // Calculate total for percentage
-  const total = stats.reduce((sum, stat) => sum + stat.count, 0);
-  
-  // Add percentage to each category
-  const statsWithPercentage = stats.map(stat => ({
-    ...stat,
-    percentage: total > 0 ? ((stat.count / total) * 100).toFixed(2) : 0
-  }));
-
-  return res.status(200).json({
-    success: true,
-    year: tahun || 'All years',
-    totalProvinces: total,
-    statistics: statsWithPercentage
-  });
-});
-
-/**
- * Get provinces by food security category
- */
-export const getProvincesByCategory = asyncHandler(async (req, res) => {
-  const { kategori } = req.params;
-  const { tahun } = req.query;
-
-  let matchCondition = {
-    'kategori_ketahanan_pangan.kategori': parseInt(kategori)
-  };
-  
-  if (tahun) {
-    matchCondition.tahun = parseInt(tahun);
-  }
-
-  const provinces = await FoodSecurity.find(matchCondition)
-    .select('provinsi tahun dependent_variable.indeks_ketahanan_pangan kategori_ketahanan_pangan')
-    .sort({ 'dependent_variable.indeks_ketahanan_pangan': 1 });
-
-  if (provinces.length === 0) {
-    return res.status(404).json({
-      success: false,
-      message: `No provinces found for category ${kategori}`
-    });
-  }
-
-  return res.status(200).json({
-    success: true,
-    category: provinces[0].kategori_ketahanan_pangan,
-    year: tahun || 'All years',
-    count: provinces.length,
-    provinces: provinces
-  });
-});
-
-/**
  * Bulk import food security data
  */
 export const bulkImportFoodSecurity = asyncHandler(async (req, res) => {
@@ -801,17 +803,16 @@ export const bulkImportFoodSecurity = asyncHandler(async (req, res) => {
       processedCount: 0
     };
     
-    // Default values for required independent variables
+    // Default values for required independent variables matching model schema
     const defaultIndependentVars = {
-      produktivitas_padi: 0,
-      persentase_penduduk_miskin: 0,
-      harga_komoditas_beras: 0,
-      persentase_pengeluaran_makanan: 0,
-      prevalensi_balita_stunting: 0,
-      ipm: 0,
-      ahh: 0,
-      persentase_rumah_tangga_dengan_listrik: 0,
-      kepadatan_penduduk: 0
+      persentase_nilai_perdagangan_domestik: 0,
+      indeks_harga_implisit: 0,
+      koefisien_gini: 0,
+      indeks_pembangunan_manusia: 0,
+      kepadatan_penduduk: 0,
+      ketersediaan_infrastruktur_jalan: 0,
+      indeks_kemahalan_konstruksi: 0,
+      indeks_demokrasi_indonesia: 0
     };
     
     // Process each food security data entry
@@ -822,8 +823,8 @@ export const bulkImportFoodSecurity = asyncHandler(async (req, res) => {
         const { provinceId, tahun, dependent_variable, independent_variables } = data;
         
         // Validate required fields
-        if (!provinceId || !tahun || !dependent_variable?.indeks_ketahanan_pangan) {
-          throw new Error('Missing required fields: provinceId, tahun, or dependent_variable.indeks_ketahanan_pangan');
+        if (!provinceId || !tahun || !dependent_variable?.prevalence_of_undernourishment) {
+          throw new Error('Missing required fields: provinceId, tahun, or dependent_variable.prevalence_of_undernourishment');
         }
         
         // Validate year is an integer
@@ -847,9 +848,6 @@ export const bulkImportFoodSecurity = asyncHandler(async (req, res) => {
           provinsi: province.name, 
           tahun 
         });
-
-        // Determine food security category
-        const categoryInfo = determineFoodSecurityCategory(dependent_variable.indeks_ketahanan_pangan);
         
         // Prepare the data to save
         const foodSecurityEntry = {
@@ -857,13 +855,12 @@ export const bulkImportFoodSecurity = asyncHandler(async (req, res) => {
           tahun,
           provinceReference: provinceId,
           dependent_variable: {
-            indeks_ketahanan_pangan: dependent_variable.indeks_ketahanan_pangan
+            prevalence_of_undernourishment: dependent_variable.prevalence_of_undernourishment
           },
           independent_variables: {
             ...defaultIndependentVars,
             ...(independent_variables || {})
           },
-          kategori_ketahanan_pangan: categoryInfo,
           createdBy: req.user.name || req.user._id,
           userRole: req.user.role,
           createdAt: new Date()
@@ -944,7 +941,9 @@ export const bulkImportFoodSecurity = asyncHandler(async (req, res) => {
   }
 });
 
-// Validate bulk import data format
+/**
+ * Validate bulk import data format
+ */
 export const validateBulkImportData = asyncHandler(async (req, res) => {
   const { foodSecurityData } = req.body;
   
@@ -964,7 +963,7 @@ export const validateBulkImportData = asyncHandler(async (req, res) => {
   
   // Required fields validation schema
   const requiredFields = ['provinceId', 'tahun'];
-  const requiredDependentVar = 'dependent_variable.indeks_ketahanan_pangan';
+  const requiredDependentVar = 'dependent_variable.prevalence_of_undernourishment';
   
   for (const [index, data] of foodSecurityData.entries()) {
     const entryErrors = [];
@@ -977,7 +976,7 @@ export const validateBulkImportData = asyncHandler(async (req, res) => {
     });
     
     // Check dependent variable
-    if (!data.dependent_variable?.indeks_ketahanan_pangan) {
+    if (!data.dependent_variable?.prevalence_of_undernourishment) {
       entryErrors.push(`Missing required field: ${requiredDependentVar}`);
     }
     
@@ -992,8 +991,8 @@ export const validateBulkImportData = asyncHandler(async (req, res) => {
     }
     
     // Validate food security index range (assuming 0-100 scale)
-    if (data.dependent_variable?.indeks_ketahanan_pangan !== undefined) {
-      const index = data.dependent_variable.indeks_ketahanan_pangan;
+    if (data.dependent_variable?.prevalence_of_undernourishment !== undefined) {
+      const index = data.dependent_variable.prevalence_of_undernourishment;
       if (typeof index !== 'number' || index < 0 || index > 100) {
         entryErrors.push(`Invalid food security index: ${index}. Must be a number between 0 and 100`);
       }
@@ -1020,166 +1019,11 @@ export const validateBulkImportData = asyncHandler(async (req, res) => {
 });
 
 /**
- * Modified create method with category determination
+ * Update food security categories (placeholder)
  */
-export const create = asyncHandler(async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  
-  try {
-    // Check if user is authenticated
-    if (!req.isAuthenticated || !req.user) {
-      const error = new Error('Authentication required');
-      error.statusCode = 401;
-      throw error;
-    }
-
-    // Add the authenticated user's ID and role to the request body
-    req.body.createdBy = req.user.name;
-    req.body.userRole = req.user.role;
-
-    const { provinceId, tahun, dependent_variable } = req.body;
-    
-    // Validate year is an integer
-    if (!Number.isInteger(tahun)) {
-      const error = new Error('Year must be an integer');
-      error.statusCode = 400;
-      throw error;
-    }
-    
-    // Verify province exists and get its name
-    const province = await Province.findById(provinceId);
-    if (!province) {
-      const error = new Error('Province not found');
-      error.statusCode = 404;
-      throw error;
-    }
-    
-    // Check if data already exists for this province and year
-    const existingData = await FoodSecurity.findOne({ provinsi: province.name, tahun });
-    
-    if (existingData) {
-      const error = new Error(`Food security data for ${province.name} in year ${tahun} already exists`);
-      error.statusCode = 409;
-      throw error;
-    }
-
-    // Determine food security category
-    const categoryInfo = determineFoodSecurityCategory(dependent_variable.indeks_ketahanan_pangan);
-
-    // Set the province name from the found province object
-    req.body.provinsi = province.name;
-    // Store province ID as a reference
-    req.body.provinceReference = provinceId;
-    // Add category information
-    req.body.kategori_ketahanan_pangan = categoryInfo;
-
-    const foodSecurity = await FoodSecurity.create([req.body], { session });
-    
-    await session.commitTransaction();
-    session.endSession();
-
-    res.status(201).json({
-      success: true,
-      data: {
-        ...foodSecurity[0]._doc,
-        province: {
-          id: province._id,
-          name: province.name,
-          code: province.code
-        }
-      }
-    });
-  } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
-    
-    // Handle validation errors
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation error',
-        errors: Object.values(error.errors).map(err => err.message)
-      });
-    }
-
-    // For custom errors with statusCode
-    if (error.statusCode) {
-      return res.status(error.statusCode).json({
-        success: false,
-        message: error.message
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      message: 'Error creating food security data',
-      error: error.message
-    });
-  }
-});
-
-/**
- * Get food security data by province and year (specific combination)
- */
-export const getFoodSecurityByProvinceAndYear = asyncHandler(async (req, res) => {
-  const { id: provinceId, year } = req.params;
-  
-  // Validate ObjectId format
-  if (!mongoose.Types.ObjectId.isValid(provinceId)) {
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid province ID format'
-    });
-  }
-  
-  // Validate year
-  const yearInt = parseInt(year, 10);
-  if (isNaN(yearInt) || yearInt < 2000 || yearInt > 2100) {
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid year. Year must be between 2000 and 2100'
-    });
-  }
-  
-  // Verify province exists
-  const province = await Province.findById(provinceId);
-  if (!province) {
-    return res.status(404).json({
-      success: false,
-      message: 'Province not found'
-    });
-  }
-  
-  // Build query using provinsi field and year
-  const query = { 
-    provinsi: province.name,
-    tahun: yearInt
-  };
-  
-  const foodSecurityData = await FoodSecurity.findOne(query);
-  
-  if (!foodSecurityData) {
-    return res.status(404).json({
-      success: false,
-      message: `No food security data found for ${province.name} in year ${yearInt}`,
-      province: {
-        id: province._id,
-        name: province.name,
-        code: province.code
-      },
-      year: yearInt
-    });
-  }
-  
-  return res.status(200).json({
-    success: true,
-    province: {
-      id: province._id,
-      name: province.name,
-      code: province.code
-    },
-    year: yearInt,
-    data: foodSecurityData
+export const updateFoodSecurityCategories = asyncHandler(async (req, res) => {
+  return res.status(501).json({
+    success: false,
+    message: 'Category functionality not implemented'
   });
 });

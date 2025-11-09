@@ -9,8 +9,13 @@ import connectProvinceRoutes from "./routes/connectprovince.routes.js";
 import provinceRoutes from "./routes/province.routes.js"; // Changed from importing the model to the router
 import connectToDatabase from "./database/mongodb.js";
 import errorMiddleware from "./middlewares/error.middleware.js";
+import clusterRouter from './routes/clustering.routes.js';
 import cookieParser from "cookie-parser";
 import mapRoutes from './routes/map.routes.js';
+import gwprRouter from './routes/gwpr.routes.js';
+import sarRouter from './routes/sar.routes.js';
+import climateRouter from './routes/climate.routes.js';
+import mppRouter from './routes/mpp.routes.js';
 
 const app = express();
 
@@ -38,7 +43,12 @@ app.use('/api/v1/food-securities', foodSecurityRoutes);
 app.use('/api/v1/supply-chain', supplyChainRoutes); // Add supply chain routes
 app.use('/api/v1/connect-province', connectProvinceRoutes);
 app.use('/api/v1/provinces', provinceRoutes); // Fixed to use the router instead of the model
-app.use('/api/v1/map', mapRoutes); // Add map routes if needed
+app.use('/api/v1/map', mapRoutes);
+app.use('/api/v1/clustering', clusterRouter);
+app.use('/api/v1/gwpr', gwprRouter);
+app.use('/api/v1/sar', sarRouter);
+app.use('/api/v1/climate', climateRouter);
+app.use('/api/v1/mpp', mppRouter);
 
 // Add a catch-all error handler
 app.use((err, req, res, next) => {

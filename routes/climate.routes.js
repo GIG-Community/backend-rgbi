@@ -5,10 +5,10 @@ import * as climateController from '../controllers/climate.controller.js';
 const router = express.Router();
 
 // GET /api/climate - Get all Climate records
-router.get('/', authenticate, climateController.getAllClimate);
+router.get('/', climateController.getAllClimate);
 
 // GET /api/climate/:id - Get Climate by ID
-router.get('/:id', authenticate, climateController.getClimateById);
+router.get('/:id', climateController.getClimateById);
 
 // POST /api/climate - Create new Climate record
 router.post('/', 

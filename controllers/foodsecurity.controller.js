@@ -18,14 +18,12 @@ export const getAllFoodSecurityData = asyncHandler(async (req, res) => {
     provinsi,
     fields,
     dependentVar,
-    independentVars
+    independentVars,
+    all // Parameter baru untuk mengambil semua data
   } = req.query;
   
-  const options = {
-    page: parseInt(page, 10),
-    limit: parseInt(limit, 10),
-    sort: { [sortBy]: order === 'desc' ? -1 : 1 }
-  };
+  // Jika parameter 'all' = true, ambil semua data tanpa pagination
+  const getAllData = all === 'true';
   
   // Build filter query
   let filter = {};
@@ -80,28 +78,51 @@ export const getAllFoodSecurityData = asyncHandler(async (req, res) => {
     projection.tahun = 1;
   }
   
-  const query = FoodSecurity.find(filter, projection)
-    .skip((options.page - 1) * options.limit)
-    .limit(options.limit)
-    .sort(options.sort);
+  const sortOptions = { [sortBy]: order === 'desc' ? -1 : 1 };
+  
+  let query = FoodSecurity.find(filter, projection).sort(sortOptions);
+  
+  // Hanya apply pagination jika tidak mengambil semua data
+  if (!getAllData) {
+    const options = {
+      page: parseInt(page, 10),
+      limit: parseInt(limit, 10)
+    };
+    
+    query = query
+      .skip((options.page - 1) * options.limit)
+      .limit(options.limit);
+  }
   
   const foodSecurityData = await query.exec();
   const total = await FoodSecurity.countDocuments(filter);
   
-  res.status(200).json({
+  const response = {
     success: true,
     data: foodSecurityData,
     filters: {
       applied: filter,
       selectedFields: fields ? fields.split(',') : 'all'
     },
-    pagination: {
+    total: total
+  };
+  
+  // Hanya tambahkan pagination info jika tidak mengambil semua data
+  if (!getAllData) {
+    const options = {
+      page: parseInt(page, 10),
+      limit: parseInt(limit, 10)
+    };
+    
+    response.pagination = {
       total,
       page: options.page,
       limit: options.limit,
       pages: Math.ceil(total / options.limit)
-    }
-  });
+    };
+  }
+  
+  res.status(200).json(response);
 });
 
 /**

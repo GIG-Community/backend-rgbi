@@ -24,6 +24,13 @@ router.post('/bulk',
   climateController.bulkCreateClimate
 );
 
+// POST /api/climate/stream - Stream bulk create Climate records for very large datasets
+router.post('/stream', 
+  authenticate, 
+  authorize(['petugas_lapangan', 'pemerintah']), 
+  climateController.streamBulkCreateClimate
+);
+
 // PUT /api/climate/:id - Update Climate record
 router.put('/:id', 
   authenticate, 
